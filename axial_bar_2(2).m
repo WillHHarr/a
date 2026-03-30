@@ -4,11 +4,13 @@
 %
 format long %number of signigicant digits in output screen
 N = input('Enter the number of elements in the beam ')
-L=2
-A=0.1
-E=10000
-po=500
-uimposed=0.01
+a = 0.1; %m
+b = 0.5; %m
+T = 10; %N/m
+Q = 3; %Pa
+wa = 0.01; %m
+wb = 0.02; %m
+ks = 85; %Pa/m
 
 %
 %INITALIZATIONS
@@ -36,16 +38,16 @@ Rp=zeros(numimp,1);
 %Initialize Global DOF vectors Uf and Up
 Uf = zeros(numeq,1);
 Up = zeros(numimp,1);
-Up(1) = 0;  %fixed at the wall
-Up(2)=uimposed; %applied end displacement
+Up(1) = wa;  %fixed at the wall
+Up(2)= wb; %applied end displacement
 
 
 %create coordinate vector x(N+1) and connectivity table lm(2,N)
 
 x=zeros(N+1,1);
-x(1)=0;
+x(1)=a;
 for i = 1:N
-	x(i+1) = x(i)+L/N;
+	x(i+1) = x(i)+ (b-a)/N;
 end
 
 lm=zeros(2,N);
@@ -66,15 +68,19 @@ for i=1:N
 	n1=lm(1,i);
 	n2=lm(2,i);
 	%get load on the element (=value of p(x) at the center of the element)
-	xm=(x(i)+x(i+1))/2; %location of element center
-	pm=po*xm*(L-xm)/L^2;
-	%compute local sm and local lv
-	k(1,1)=E*A/le;
-	k(1,2)=-k(1,1);
-	k(2,1)=k(1,2);
-	k(2,2)=k(1,1);
-	r(1)=pm*le/2;
-	r(2)=pm*le/2;
+
+    r1 = x(i);
+    r2 = x(i+1);
+    h = r2 - r1;
+    rm = (r1 + r2)/2;
+
+    k(1,1) = ((pi*T*(r2+r1))/h) + 2*(pi*ks*h)/3;
+    k(1,2) = -1*((pi*T*(r2+r1))/h) + (pi*ks*h)/3;
+    k(2,1) = k(1,2);
+    k(2,2) = ((pi*T*(r2+r1))/h) + 2*(pi*ks*h)/3;
+
+    r(1) = 2*pi * Q*h*(2*r1 + r2)/6;
+    r(2) = 2*pi * Q*h*(r1 + 2*r2)/6;
 	%assemble into Kff, Kpf, Kpp and Rf and Rp
 	iaux=zeros(2,1);
 	iaux(1) = idof(n1);
@@ -115,69 +121,32 @@ for i=1:numnp
 		u(i)=Up(-idof(i));
 	end
 end
-%compute exact solution
-uex1=zeros(N+1,1);  %used for pointwise comparison
-xx=zeros(501,1);	%used for plotting exact solution
-xx=0:L/500:L;
-uex2=zeros(501,1);  %used for plotting exact solution
-eta=E*A*uimposed/(po*L^2);
-uex1=po*L^2/(E*A)*(((x/L).^4)/12-((x/L).^3)/6+(1/12+eta)*(x/L));
-uex2=po*L^2/(E*A)*(((xx/L).^4)/12-((xx/L).^3)/6+(1/12+eta)*(xx/L));
+
+%I did use clause to modify the plotting issues as I never understand the
+%plotting functions if I didn't write them myself
 %print and plot solutions
 sprintf('%s','nodal displacements')
 iii=1:1:numnp;
-%build display matrix the ' means transpose
-aux=[iii;x';u';uex1'];
-sprintf('node %d  x=%8.3f  u=%15.5f  uex=%15.5f\n', aux)
-subplot(1,2,1),plot(x/L,E*A*u/(po*L^2),'ro-',xx/L,E*A*uex2/(po*L^2),'b-','linewidth',2)
-title('Displacement')
-xlabel('$\frac{x}{L}$','Interpreter','latex')
-ylabel('$\frac{EAu(x)}{p_0L^2}$','Interpreter','latex')
-legend('numerical','analytical','location', 'south')
+aux=[iii;x';u'];
+sprintf('node %d  x=%8.3f  u=%15.5f\n', aux)
+
+xx = a:(b-a)/500:b;
+
+plot(x, u, 'ro-', 'linewidth', 2)
+title('Axi-symmetric Membrane Deflection - YourName')
+xlabel('r (m)')
+ylabel('w(r) (m)')
+legend('numerical','location','best')
 
 %compute largest differences between exact and FE solutions
-%at the nodes(*100/uimposed)
-error=100*max(abs(u-uex1))/uimposed;
-sprintf('maximum error on nodal displacement = %17.10f percent\n',error)
-
-%Compute and plot stress distribution
-stress = zeros(numel,1);
-xc = zeros(numel,1);
-for i=1:numel
-    n1=lm(1,i);
-    n2=lm(2,i);
-    le=abs(x(n2)-x(n1));
-    strain=(u(n2)-u(n1))/le;
-    stress(i)=E*strain;
-    xc(i)=(x(n2)-x(n1))/2;
-end
-sprintf('%s','axial stress distribution')
-iii=1:1:numel;
-aux=[iii;xc';stress'];
-sprintf('element %d  xc=%8.4f  stress=%15.8f Pascal \n', aux)
-xx=zeros(2*numel,1); %used to plot the FE stress distribution
-stress2=zeros(2*numel,1); %used t plot the FE stress distirbution
-for i = 1:numel
-    xx(2*i-1)=x(lm(1,i));
-    xx(2*i)=x(lm(2,i));
-    stress2(2*i-1)=stress(i);
-    stress2(2*i)=stress(i);
-end
-xxx=zeros(501,1); %used to plot the eact stress distribution
-xxx=0:L/500:L;
-sigma_ex=po*L/A*(((xxx/L).^3)/3-((xxx/L).^2)/2+(1/12+eta));
-subplot(1,2,2),plot(xxx/L,A*sigma_ex/(po*L),'b-',xx/L,A*stress2/(po*L),'r.:','linewidth',2)
-title('axial stress')
-xlabel('$\frac{x}{L}$','Interpreter','latex')
-ylabel('$\frac{A\sigma}{p_0L}$','Interpreter','latex')
-legend('numerical','analytical','location', 'southwest')
+%not available for this problem, remove error calculation
 
 %Obtain and print reactions at supports
 sprintf('%s','support reactions')
-Rp=Rp-(Kpf*Uf+Kpp*Up)
+Rp=Rp-(Kpf*Uf+Kpp*Up);
 for i=1:numnp
     if idof(i)<0
-        sprintf('node # %d  Reaction= %15.5f Newtons', i,Rp(-idof(i)))
+        sprintf('node # %d  Reaction= %15.5f Newtons', i, Rp(-idof(i)))
     end
 end
 
